@@ -1,0 +1,32 @@
+# ── k8s/frontend/hpa.yaml ────────────────────────────────────────────────────
+# HorizontalPodAutoscaler — escala o frontend automaticamente com base no CPU
+# Mínimo: 2 réplicas  |  Máximo: 6 réplicas
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: motoar-frontend-hpa
+  namespace: motoar
+  labels:
+    app: motoar-frontend
+    app.kubernetes.io/component: frontend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: motoar-frontend
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

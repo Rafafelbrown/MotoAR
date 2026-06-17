@@ -1,0 +1,94 @@
+# ── k8s/streamlit/deployment.yaml ────────────────────────────────────────────
+# Deployment do dashboard Streamlit (análise interativa)
+# Porta interna: 8501
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: motoar-streamlit
+  namespace: motoar
+  labels:
+    app: motoar-streamlit
+    app.kubernetes.io/component: streamlit
+    app.kubernetes.io/part-of: motoar-platform
+spec:
+  replicas: 1                        # Streamlit é stateful, manter 1 réplica
+  selector:
+    matchLabels:
+      app: motoar-streamlit
+  strategy:
+    type: Recreate                   # Recria o pod ao atualizar (sem rolling para stateful)
+  template:
+    metadata:
+      labels:
+        app: motoar-streamlit
+    spec:
+      containers:
+        - name: streamlit
+          image: motoar/streamlit:latest
+          imagePullPolicy: IfNotPresent
+
+          ports:
+            - containerPort: 8501
+              name: http
+
+          envFrom:
+            - configMapRef:
+                name: motoar-config
+
+          volumeMounts:
+            - name: motoar-data
+              mountPath: /data
+              readOnly: true         # Streamlit apenas lê os dados processados
+
+          # Liveness: verifica se o processo ainda responde
+          livenessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+
+          # Readiness: só recebe tráfego quando pronto
+          readinessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+
+      volumes:
+        - name: motoar-data
+          persistentVolumeClaim:
+            claimName: motoar-data-pvc
+
+---
+# Service — expõe o Streamlit dentro do cluster
+apiVersion: v1
+kind: Service
+metadata:
+  name: motoar-streamlit-svc
+  namespace: motoar
+  labels:
+    app: motoar-streamlit
+    app.kubernetes.io/component: streamlit
+spec:
+  selector:
+    app: motoar-streamlit
+  ports:
+    - name: http
+      port: 8501
+      targetPort: 8501
+      protocol: TCP
+  type: ClusterIP
