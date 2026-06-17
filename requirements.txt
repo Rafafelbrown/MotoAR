@@ -1,0 +1,31 @@
+# MotoAR Pipeline Requirements
+# Python 3.11+
+
+# Data Processing
+pandas==2.2.3
+numpy==1.26.4
+pyarrow==17.0.0
+
+# Machine Learning
+scikit-learn==1.5.1
+xgboost==2.1.1
+
+# ML Governance & Tracking
+mlflow==2.14.1
+
+# Web Framework & Dashboards
+streamlit==1.39.0
+plotly==5.24.1
+
+# File Handling
+openpyxl==3.10.10
+
+# Reporting
+reportlab==4.0.9
+
+# Testing
+pytest==8.3.2
+pytest-cov==5.0.0
+
+# Development
+python-dotenv==1.0.1

@@ -1,0 +1,46 @@
+# ── Dockerfile.pipeline ──────────────────────────────────────────────────────
+# Imagem para rodar o pipeline de dados MotoAR:
+#   bronze_ingest.py → silver_transform.py → quality_check.py → gold_build.py
+# Orquestrado por: orchestration/run_pipeline.py
+# ─────────────────────────────────────────────────────────────────────────────
+
+FROM python:3.11-slim
+
+LABEL maintainer="MotoAR Team — UniCEUB 2026"
+LABEL description="Pipeline de dados MotoAR (Bronze/Silver/Gold/Quality)"
+
+# Variáveis de ambiente
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    MLFLOW_TRACKING_URI=sqlite:////data/mlruns/motoar.db
+
+WORKDIR /app
+
+# Dependências do sistema
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc \
+        libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Dependências Python
+COPY requirements-pipeline.txt .
+RUN pip install --upgrade pip && pip install -r requirements-pipeline.txt
+
+# Código do projeto
+COPY motoar_pipeline.py .
+COPY silver_transform.py .
+COPY bronze_ingest.py .
+COPY gold_build.py .
+COPY build_data.py .
+COPY orchestration/ ./orchestration/
+COPY quality/ ./quality/
+
+# Volume para dados persistentes (Bronze/Silver/Gold/MLflow)
+VOLUME ["/data"]
+
+# Por padrão executa o pipeline completo
+# Pode ser sobrescrito no k8s com args específicos
+CMD ["python", "orchestration/run_pipeline.py", \
+     "--inmet", "/data/raw/ESTACOES AUTOMATICAS _ DADOS BRUTO 2025.xlsx", \
+     "--fmt", "parquet"]

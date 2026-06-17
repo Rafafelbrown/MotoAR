@@ -1,0 +1,39 @@
+# ── Dockerfile.streamlit ─────────────────────────────────────────────────────
+# Dashboard de análise interativa — Streamlit
+# Porta: 8501
+# ─────────────────────────────────────────────────────────────────────────────
+
+FROM python:3.11-slim
+
+LABEL maintainer="MotoAR Team — UniCEUB 2026"
+LABEL description="Dashboard Streamlit MotoAR"
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc \
+        libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-streamlit.txt .
+RUN pip install --upgrade pip && pip install -r requirements-streamlit.txt
+
+COPY motoar_app.py .
+COPY motoar_app2.py .
+COPY motoar_pipeline.py .
+
+# Dados são montados via PVC em /data
+VOLUME ["/data"]
+
+EXPOSE 8501
+
+# Streamlit sem browser, acessível externamente
+CMD ["streamlit", "run", "motoar_app.py", \
+     "--server.port=8501", \
+     "--server.address=0.0.0.0", \
+     "--server.headless=true", \
+     "--browser.gatherUsageStats=false"]

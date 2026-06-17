@@ -1,0 +1,102 @@
+# ── k8s/mlflow/deployment.yaml ───────────────────────────────────────────────
+# Deployment do servidor MLflow (UI de experimentos e governança)
+# Porta interna: 5000
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: motoar-mlflow
+  namespace: motoar
+  labels:
+    app: motoar-mlflow
+    app.kubernetes.io/component: mlflow
+    app.kubernetes.io/part-of: motoar-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: motoar-mlflow
+  strategy:
+    type: Recreate                   # Stateful (SQLite), sem rolling update
+  template:
+    metadata:
+      labels:
+        app: motoar-mlflow
+    spec:
+      containers:
+        - name: mlflow
+          image: python:3.11-slim
+          imagePullPolicy: IfNotPresent
+
+          # Instala e inicia o MLflow UI apontando para o banco SQLite compartilhado
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              pip install mlflow==2.13.0 --quiet && \
+              mlflow server \
+                --backend-store-uri sqlite:////data/mlruns/motoar.db \
+                --default-artifact-root /data/mlruns/artifacts \
+                --host 0.0.0.0 \
+                --port 5000
+
+          ports:
+            - containerPort: 5000
+              name: http
+
+          envFrom:
+            - configMapRef:
+                name: motoar-config
+
+          volumeMounts:
+            - name: motoar-data
+              mountPath: /data
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 60   # MLflow demora para iniciar
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 45
+            periodSeconds: 15
+            timeoutSeconds: 5
+
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "300m"
+
+      volumes:
+        - name: motoar-data
+          persistentVolumeClaim:
+            claimName: motoar-data-pvc
+
+---
+# Service — expõe o MLflow dentro do cluster
+apiVersion: v1
+kind: Service
+metadata:
+  name: motoar-mlflow-svc
+  namespace: motoar
+  labels:
+    app: motoar-mlflow
+    app.kubernetes.io/component: mlflow
+spec:
+  selector:
+    app: motoar-mlflow
+  ports:
+    - name: http
+      port: 5000
+      targetPort: 5000
+      protocol: TCP
+  type: ClusterIP
