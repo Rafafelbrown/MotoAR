@@ -38,41 +38,44 @@ streamlit run dashboard/streamlit/motoar_app.py
 
 O **MotoAR** monitora e prevê a qualidade do ar no Distrito Federal combinando dados do **INMET** (estações automáticas, 8.280 registros) e **IQAir** (4 sensores comunitários, 36.301 leituras). O pipeline produz um **Score MotoAR 0–100** com recomendação de EPI para o motociclista.
 
-### Visão Geral do Fluxo
+### Arquitetura da Plataforma
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                    ENTRADA DE DADOS BRUTOS                       │
-├──────────────────────────┬──────────────────────────────────────┤
-│   INMET (Excel)          │   IQAir (CSV)                        │
-│   8.280 registros        │   36.301 leituras                    │
-└──────────────────────────┴──────────────────────────────────────┘
-                           │
-                           ▼
-        ┌──────────────────────────────────────────┐
-        │  PASSO 1: Pipeline de Dados (Python)     │
-        ├──────────────────────────────────────────┤
-        │  Bronze   → Silver   → Gold              │
-        │  (raw)      (clean)    (agregado)        │
-        │                                          │
-        │  + Quality Check (16 validações)         │
-        │  + XGBoost Training (MLflow)             │
-        └──────────────────────────────────────────┘
-                           │
-                           ▼
-         ┌─────────────────────────────────────┐
-         │     data_export.json (Saída)        │
-         │     Agregações Gold + Modelo        │
-         └─────────────────────────────────────┘
-                           │
-             ┌─────────────┼─────────────┐
-             ▼             ▼             ▼
-    ┌─────────────┐  ┌──────────┐  ┌──────────┐
-    │   React     │  │Streamlit │  │  MLflow  │
-    │   Dashboard │  │  App     │  │   UI     │
-    │ (Gráficos)  │  │(Análise) │  │(Modelos) │
-    └─────────────┘  └──────────┘  └──────────┘
-         (5173)       (8501)         (5000)
+```mermaid
+flowchart TD
+    INMET["📥 INMET\nEstações automáticas · Excel\n8.280 registros"]
+    IQAir["📥 IQAir\nSensores comunitários · CSV\n36.301 leituras"]
+
+    subgraph Pipeline["🔄 Pipeline Medalhão — Python · CronJob diário 02h00 BRT"]
+        direction LR
+        Bronze["🔴 Bronze\nIngestão raw\nParquet + MD5"]
+        Silver["🔵 Silver\nLimpeza & validação\n16 expectativas de qualidade"]
+        Gold["🟡 Gold\nAgregações analíticas\n86 features · Score MotoAR 0–100"]
+        Bronze --> Silver --> Gold
+    end
+
+    subgraph ML["🧠 Modelagem"]
+        XGB["XGBoost\nR² = 0.83 · MAE = 2.63 µg/m³\nPrevisão 6h à frente"]
+        MLflowTrack["MLflow\nRastreamento de experimentos\nRegistro de modelos · SQLite"]
+        XGB --- MLflowTrack
+    end
+
+    subgraph Artefato["📦 Saída do pipeline"]
+        JSON["data_export.json\nAgregações Gold + modelo treinado"]
+    end
+
+    subgraph K8s["☸ Kubernetes · namespace motoar · NGINX Ingress"]
+        React["⚛️ React Dashboard\nVite + TypeScript + Recharts\nrota: /  · porta 80"]
+        Streamlit["🎈 Streamlit App\nEDA · LCA · relatório\nrota: /app  · porta 8501"]
+        MLflowUI["📊 MLflow UI\nGovernança de modelos\nrota: /mlflow  · porta 5000"]
+    end
+
+    INMET --> Bronze
+    IQAir --> Bronze
+    Gold --> ML
+    Gold --> JSON
+    JSON --> React
+    JSON --> Streamlit
+    MLflowTrack --> MLflowUI
 ```
 
 ---
@@ -431,20 +434,46 @@ motoar/
 
 ---
 
-## Arquitetura As-Built — Medalhão
+## 🏗️ Arquitetura As-Built — Medalhão
 
-```
-Fontes Externas          Data Lake (Parquet)                    Consumo
-┌─────────────┐   ┌────────────────────────────────────┐   ┌────────────────┐
-│  INMET .xlsx│──▶│  Bronze    →  Silver  →  Gold      │──▶│  React + Vite  │
-│  IQAir .csv │──▶│  (raw)        (clean)   (aggreg.)  │   │  Streamlit     │
-└─────────────┘   └────────────────────────────────────┘   │  data_export   │
-                            │          │                    └────────────────┘
-                       Quality     MLflow
-                       Check       (SQLite)
-                  ┌──────────────────────────────────────────────────────┐
-                  │  Orquestrador — run_pipeline.py (DAG sequencial)     │
-                  └──────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph Fontes["📥 Fontes externas"]
+        direction TB
+        F1["INMET · Excel\n8.280 registros"]
+        F2["IQAir · CSV\n36.301 leituras"]
+    end
+
+    subgraph Lake["🗄️ Data Lake · Parquet"]
+        direction TB
+        B["Bronze\nraw"]
+        S["Silver\nclean"]
+        G["Gold\naggr."]
+        QC["Quality Check\n16 validações"]
+        B --> S --> G
+        S --> QC
+    end
+
+    subgraph Saida["📦 Saída"]
+        direction TB
+        J["data_export.json"]
+        ML["MLflow · SQLite\nXGBoost treinado"]
+    end
+
+    subgraph Consumo["🖥️ Consumo"]
+        direction TB
+        R["React + Vite\n:5173 / :80"]
+        St["Streamlit\n:8501"]
+        MU["MLflow UI\n:5000"]
+    end
+
+    Orch["⚙️ Orquestrador\nrun_pipeline.py\nDAG sequencial"]
+
+    Fontes --> Lake
+    Orch --> Lake
+    G --> Saida
+    J --> R & St
+    ML --> MU
 ```
 
 ### Mudanças em relação ao plano original (Parte 1)
