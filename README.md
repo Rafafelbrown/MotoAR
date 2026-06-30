@@ -77,7 +77,7 @@ flowchart TD
     JSON --> Streamlit
     MLflowTrack --> MLflowUI
 ```
-
+![Arquitetura-da-Plataforma](https://github.com/Rafafelbrown/MotoAR/blob/nova-feature/Arquiteura%20MotoAr.png)
 ---
 
 ## 🚀 Guia de Início — Passo a Passo
